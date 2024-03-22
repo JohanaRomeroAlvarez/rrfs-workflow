@@ -16,7 +16,7 @@ import interp_tools as i_tools
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Workflow
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def generate_emiss_workflow(staticdir, ravedir, newges_dir, predef_grid):
+def generate_emiss_workflow(staticdir, ravedir, newges_dir, predef_grid, ebb_dcycle):
    
    # ----------------------------------------------------------------------
    # Import envs from workflow and get the predifying grid
@@ -48,7 +48,7 @@ def generate_emiss_workflow(staticdir, ravedir, newges_dir, predef_grid):
    # ----------------------------------------------------------------------
    # Sort raw RAVE, create source and target filelds, and compute emissions 
    # ----------------------------------------------------------------------
-   fcst_dates = i_tools.date_range(current_day)
+   fcst_dates = i_tools.date_range(current_day, ebb_dcycle)
    intp_avail_hours, intp_non_avail_hours, inp_files_2use = i_tools.check_for_intp_rave(intp_dir, fcst_dates, rave_to_intp)
    rave_avail, rave_avail_hours, rave_nonavail_hours_test, first_day = i_tools.check_for_raw_rave(RAVE, intp_non_avail_hours, intp_avail_hours)
    srcfield, tgtfield, tgt_latt, tgt_lont, srcgrid, tgtgrid, src_latt, tgt_area = i_tools.creates_st_fields(grid_in, grid_out, intp_dir, rave_avail_hours) 
@@ -63,16 +63,19 @@ def generate_emiss_workflow(staticdir, ravedir, newges_dir, predef_grid):
                                     use_dummy_emiss, vars_emis, regridder, srcgrid, tgtgrid, rave_to_intp,
                                     intp_dir, src_latt, tgt_latt, tgt_lont, cols, rows)
            print('Restart dates to process',fcst_dates)
-           hwp_avail_hours, hwp_non_avail_hours = HWP_tools.check_restart_files(hourly_hwpdir, fcst_dates)
-           restart_avail, restart_nonavail_hours_test = HWP_tools.copy_missing_restart(nwges_dir, hwp_non_avail_hours, hourly_hwpdir)
-           start = time.time()
-           hwp_ave_arr, xarr_hwp, totprcp_ave_arr, xarr_totprcp = HWP_tools.process_hwp(fcst_dates, hourly_hwpdir, cols, rows, intp_dir, rave_to_intp)
-           frp_avg_reshaped, ebb_tot_reshaped = femmi_tools.averaging_FRP(fcst_dates, cols, rows, intp_dir, rave_to_intp, veg_map, tgt_area, beta, fg_to_ug)
-           #Fire end hours processing
-           te = femmi_tools.estimate_fire_duration(intp_avail_hours, intp_dir, fcst_dates, current_day, cols, rows, rave_to_intp)
-           fire_age = femmi_tools.save_fire_dur(cols, rows, te)
-           #produce emiss file 
-           femmi_tools.produce_emiss_file(xarr_hwp, frp_avg_reshaped, totprcp_ave_arr, xarr_totprcp, intp_dir, current_day, tgt_latt, tgt_lont, ebb_tot_reshaped, fire_age, cols, rows)
+           if ebb_dcycle == 1:
+               frp_reshaped, ebb_smoke_reshaped = femmi_tools.averaging_FRP(ebb_dcycle, fcst_dates, cols, rows, intp_dir, rave_to_intp, veg_map, tgt_area, beta, fg_to_ug, to_s)
+               femmi_tools.produce_emiss_24hr_file(ebb_dcycle, frp_reshaped, intp_dir, current_day, tgt_latt, tgt_lont, ebb_smoke_reshaped, cols, rows)
+           elif ebb_dcycle == 2:
+               hwp_avail_hours, hwp_non_avail_hours = HWP_tools.check_restart_files(hourly_hwpdir, fcst_dates)
+               restart_avail, restart_nonavail_hours_test = HWP_tools.copy_missing_restart(nwges_dir, hwp_non_avail_hours, hourly_hwpdir)
+               hwp_ave_arr, xarr_hwp, totprcp_ave_arr, xarr_totprcp = HWP_tools.process_hwp(fcst_dates, hourly_hwpdir, cols, rows, intp_dir, rave_to_intp)
+               frp_avg_reshaped, ebb_tot_reshaped = femmi_tools.averaging_FRP(fcst_dates, cols, rows, intp_dir, rave_to_intp, veg_map, tgt_area, beta, fg_to_ug)
+               #Fire end hours processing
+               te = femmi_tools.estimate_fire_duration(intp_avail_hours, intp_dir, fcst_dates, current_day, cols, rows, rave_to_intp)
+               fire_age = femmi_tools.save_fire_dur(cols, rows, te)
+               #produce emiss file 
+               femmi_tools.produce_emiss_file(ebb_dcycle, xarr_hwp, frp_avg_reshaped, totprcp_ave_arr, xarr_totprcp, intp_dir, current_day, tgt_latt, tgt_lont, ebb_tot_reshaped, fire_age, cols, rows)
    else:
        print('First day true, no RAVE files available. Use dummy emissions file')
        i_tools.create_dummy(intp_dir, current_day, tgt_latt, tgt_lont, cols, rows)
@@ -84,7 +87,7 @@ if __name__ == '__main__':
         print('Welcome to interpolating RAVE and processing fire emissions!')
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('')
-        generate_emiss_workflow(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
+        generate_emiss_workflow(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
         print('')
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('Successful Completion. Bye!')

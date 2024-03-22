@@ -8,13 +8,17 @@ import numpy as np
 from netCDF4 import Dataset
 
 #Create date range, this is later used to search for RAVE and HWP from previous 24 hours
-def date_range(current_day):
+def date_range(current_day, ebb_dcycle)):
     print(f'Searching for interpolated RAVE for {current_day}')
-    
+    print('EBB CYCLE:',ebb_dcycle)  
     fcst_datetime = dt.datetime.strptime(current_day, "%Y%m%d%H")
-    start_datetime = fcst_datetime - dt.timedelta(days=1, hours=1)
+    if ebb_dcycle == 1:
+       print('Processing RAVE for EBB_DCYCLE =1')
+       fcst_dates = pd.date_range(start=fcst_datetime, periods=24, freq='H').strftime("%Y%m%d%H") 
+    else:   
+       start_datetime = fcst_datetime - dt.timedelta(days=1, hours=1)
     
-    fcst_dates = pd.date_range(start=start_datetime, periods=24, freq='H').strftime("%Y%m%d%H")
+       fcst_dates = pd.date_range(start=start_datetime, periods=24, freq='H').strftime("%Y%m%d%H")
 
     print(f'Current cycle: {fcst_datetime}')
     return(fcst_dates)
