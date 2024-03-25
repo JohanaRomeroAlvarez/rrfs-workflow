@@ -5,8 +5,7 @@ from datetime import datetime
 from netCDF4 import Dataset
 import interp_tools as i_tools
 
-#Compute average FRP from raw RAVE for the previous 24 hours 
-def averaging_FRP(ebb_dcycle, fcst_dates, cols, rows, intp_dir, rave_to_intp, veg_map, tgt_area, beta, fg_to_ug):
+def averaging_FRP(ebb_dcycle, fcst_dates, cols, rows, intp_dir, rave_to_intp, veg_map, tgt_area, beta, fg_to_ug, to_s):
     # There are two situations here.
     #   1) there is only on fire detection whithin 24 hours so FRP is divided by 2 
     #   2) There are more than one fire detection so the average FRP is stimated
@@ -31,7 +30,7 @@ def averaging_FRP(ebb_dcycle, fcst_dates, cols, rows, intp_dir, rave_to_intp, ve
                 open_frp = nc.frp_avg_hr[0, :, :].values
                 num_files += 1 
                 if ebb_dcycle == 1:
-                   print('PROCESSING EMISS EBB 1')
+                   print('Processing emissions for ebb_dcyc 1')
                    frp_avg_hr.append(open_frp)
                    ebb_hourly = (open_fre * emiss_factor * beta * fg_to_ug) / (target_area * to_s)  
                    ebb_smoke_total.append(np.where(open_frp > 0, ebb_hourly, 0))
@@ -45,10 +44,8 @@ def averaging_FRP(ebb_dcycle, fcst_dates, cols, rows, intp_dir, rave_to_intp, ve
 
     if num_files > 0:
         if ebb_dcycle == 1:
-           print('entreing loop num_file')
            frp_reshaped = frp_avg_hr
            ebb_smoke_reshaped = ebb_smoke_total 
-           print(np.shape(frp_reshaped), np.shape(ebb_smoke_reshaped),np.max(ebb_smoke_reshaped))
         else:    
            summed_array = np.sum(np.array(ebb_smoke_total), axis=0)
            # Count the total number of zeros
@@ -57,21 +54,21 @@ def averaging_FRP(ebb_dcycle, fcst_dates, cols, rows, intp_dir, rave_to_intp, ve
            result_array = summed_array / safe_zero_count 
            result_array[num_zeros == 0] = summed_array[num_zeros == 0]
            ebb_total =result_array.reshape(cols, rows)
-           ebb_total_reshaped = ebb_total / 3600
+           ebb_smoke_reshaped = ebb_total / 3600
 
            temp_frp=[frp_daily[i]/2 if safe_zero_count[i] == 1 else frp_daily[i]/safe_zero_count[i] for i in range(len(safe_zero_count))]
            temp_frp=np.array(temp_frp) 
            temp_frp[num_zeros == 0] = frp_daily[num_zeros == 0]
-           frp_avg_reshaped = temp_frp.reshape(cols, rows)
+           frp_reshaped = temp_frp.reshape(cols, rows)
     else:
         if ebb_dcycle == 1:
            frp_reshaped = np.zeros((24, cols, rows))
            ebb_smoke_reshaped = np.zeros((24, cols, rows))  
         else:
-           frp_avg_reshaped =  np.zeros((cols, rows))
-           ebb_total_reshaped =  np.zeros((cols, rows))
+           frp_reshaped =  np.zeros((cols, rows))
+           ebb_smoke_reshaped =  np.zeros((cols, rows))
 
-    return(frp_avg_reshaped, ebb_total_reshaped)
+    return(frp_reshaped, ebb_smoke_reshaped)
 
 def estimate_fire_duration(intp_avail_hours, intp_dir, fcst_dates, current_day, cols, rows, rave_to_intp):
     # There are two steps here.
@@ -107,24 +104,21 @@ def save_fire_dur(cols, rows, te):
     return(fire_dur)
 
 def produce_emiss_24hr_file(ebb_dcycle, frp_reshaped, intp_dir, current_day, tgt_latt, tgt_lont, ebb_smoke_reshaped, cols, rows):
-    print('Producing emissions file for EBB_DCYC 2')  
     file_path = os.path.join(intp_dir, f'SMOKE_RRFS_data_{current_day}00.nc')
-    print(file_path)
     with Dataset(file_path, 'w') as fout:
         i_tools.create_emiss_file(fout, cols, rows)
         i_tools.Store_latlon_by_Level(fout, 'geolat', tgt_latt, 'cell center latitude', 'degrees_north', '2D', '-9999.f', '1.f')
         i_tools.Store_latlon_by_Level(fout, 'geolon', tgt_lont, 'cell center longitude', 'degrees_east', '2D', '-9999.f', '1.f')
 
-        print('Storing different variables')
         i_tools.Store_by_Level(fout,'frp_avg_hr','mean Fire Radiative Power','MW','3D','0.f','1.f')
         fout.variables['frp_avg_hr'][:, :, :] = frp_reshaped
         i_tools.Store_by_Level(fout,'ebb_smoke_hr','EBB emissions','ug m-2 s-1','3D','0.f','1.f')
         fout.variables['ebb_smoke_hr'][:, :, :] = ebb_smoke_reshaped
 
-def produce_emiss_file(ebb_dcycle, xarr_hwp, frp_avg_reshaped, totprcp_ave_arr, xarr_totprcp, intp_dir, current_day, tgt_latt, tgt_lont, ebb_tot_reshaped, fire_age, cols, rows):
+def produce_emiss_file(ebb_dcycle,  xarr_hwp, frp_reshaped, totprcp_ave_arr, xarr_totprcp, intp_dir, current_day, tgt_latt, tgt_lont, ebb_smoke_reshaped, fire_age, cols, rows):
     # Filter HWP
-    filtered_hwp = xarr_hwp.where(frp_avg_reshaped > 0, 0)
-    filtered_prcp = xarr_totprcp.where(frp_avg_reshaped > 0, 0)
+    filtered_hwp = xarr_hwp.where(frp_reshaped > 0, 0)
+    filtered_prcp = xarr_totprcp.where(frp_reshaped > 0, 0)
 
     # Produce emiss file
     file_path = os.path.join(intp_dir, f'SMOKE_RRFS_data_{current_day}00.nc')
@@ -136,9 +130,9 @@ def produce_emiss_file(ebb_dcycle, xarr_hwp, frp_avg_reshaped, totprcp_ave_arr, 
  
         print('Storing different variables')
         i_tools.Store_by_Level(fout,'frp_davg','Daily mean Fire Radiative Power','MW','3D','0.f','1.f')
-        fout.variables['frp_davg'][0, :, :] = frp_avg_reshaped
+        fout.variables['frp_davg'][0, :, :] = frp_reshaped
         i_tools.Store_by_Level(fout,'ebb_rate','Total EBB emission','ug m-2 s-1','3D','0.f','1.f') 
-        fout.variables['ebb_rate'][0, :, :] = ebb_tot_reshaped
+        fout.variables['ebb_rate'][0, :, :] = ebb_smoke_reshaped
         i_tools.Store_by_Level(fout,'fire_end_hr','Hours since fire was last detected','hrs','3D','0.f','1.f')
         fout.variables['fire_end_hr'][0, :, :] = fire_age
         i_tools.Store_by_Level(fout,'hwp_davg','Daily mean Hourly Wildfire Potential', 'none','3D','0.f','1.f')
@@ -147,4 +141,5 @@ def produce_emiss_file(ebb_dcycle, xarr_hwp, frp_avg_reshaped, totprcp_ave_arr, 
         fout.variables['totprcp_24hrs'][0, :, :] = filtered_prcp  
 
     return "Emissions file created successfully"
+
 
