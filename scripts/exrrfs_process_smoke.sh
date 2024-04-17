@@ -64,61 +64,95 @@ mkdir -p "${hourly_hwpdir}"
 # is reused
 #
 #-----------------------------------------------------------------------
-ECHO=/bin/echo
-SED=/bin/sed
-DATE=/bin/date
-LN=/bin/ln
-START_DATE=$(${ECHO} "${CDATE}" | ${SED} 's/\([[:digit:]]\{2\}\)$/ \1/')
-YYYYMMDDHH=$(${DATE} +%Y%m%d%H -d "${START_DATE}")
+# Set essential commands
+DATE='/bin/date'
+LN='/bin/ln'
+ECHO='/bin/echo'
+SED='/bin/sed'
+
+# Prepare date and time variables
+START_DATE=$($ECHO "${CDATE}" | $SED 's/\([[:digit:]]\{2\}\)$/ \1/')
+YYYYMMDDHH=$($DATE +%Y%m%d%H -d "${START_DATE}")
 YYYYMMDD=${YYYYMMDDHH:0:8}
 HH=${YYYYMMDDHH:8:2}
-${ECHO} ${YYYYMMDD}
-${ECHO} ${HH}
-current_day=`${DATE} -d "${YYYYMMDD}"`
-current_hh=`${DATE} -d ${HH} +"%H"`
-prev_hh=`${DATE} -d "$current_hh -24 hour" +"%H"`
-previous_day=`${DATE} '+%C%y%m%d' -d "$current_day-1 days"`
-previous_day="${previous_day} ${prev_hh}"
-nfiles=24
-smokeFile=SMOKE_RRFS_data_${YYYYMMDDHH}00.nc
 
-for i in $(seq 0 $(($nfiles - 1)) )
-do
-   timestr=`date +%Y%m%d%H -d "$previous_day + $i hours"`
-   intp_fname=${PREDEF_GRID_NAME}_intp_${timestr}00_${timestr}59.nc
-   if  [ -f ${rave_nwges_dir}/${intp_fname} ]; then
-      ${LN} -sf ${rave_nwges_dir}/${intp_fname} ${workdir}/${intp_fname}
-      echo "${rave_nwges_dir}/${intp_fname} interoplated file available to reuse"
-   else
-      echo "${rave_nwges_dir}/${intp_fname} interoplated file non available to reuse"  
-   fi
+# Define additional date variables
+current_day=$($DATE -d "$YYYYMMDD" "+%Y%m%d")
+current_hh=$($DATE -d "$HH" +"%H")
+prev_hh=$($DATE -d "$current_hh -24 hour" +"%H")
+previous_day=$($DATE '+%C%y%m%d' -d "$current_day-1 days")
+
+# Link the hourly, interpolated RAVE data from RAVE_INTP directory
+for i in $(seq 0 23); do
+    timestr=$($DATE +%Y%m%d%H -d "$previous_day + $i hours")
+    intp_fname=${PREDEF_GRID_NAME}_intp_${timestr}00_${timestr}59.nc
+    if [ -f "${NWGES_DIR}/RAVE_INTP/${intp_fname}" ]; then
+        $LN -sf "${NWGES_DIR}/RAVE_INTP/${intp_fname}" "${workdir}/${intp_fname}"
+        echo "${NWGES_DIR}/RAVE_INTP/${intp_fname} interpolated file available to reuse"
+    else
+        echo "${NWGES_DIR}/RAVE_INTP/${intp_fname} interpolated file not available to reuse"
+    fi
 done
 
-#-----------------------------------------------------------------------
-#
-#  link RAVE data to work directory  $workdir
-#
-#-----------------------------------------------------------------------
-
+# Link RAVE data to the work directory as EMC workdir is set up different
 previous_2day=`${DATE} '+%C%y%m%d' -d "$current_day-2 days"`
 YYYYMMDDm1=${previous_day:0:8}
 YYYYMMDDm2=${previous_2day:0:8}
-if [ -d ${FIRE_RAVE_DIR}/${YYYYMMDDm1}/rave ]; then
-   fire_rave_dir_work=${workdir}
-   ln -s ${FIRE_RAVE_DIR}/${YYYYMMDD}/rave/RAVE-HrlyEmiss-3km_* ${fire_rave_dir_work}/.
-   ln -s ${FIRE_RAVE_DIR}/${YYYYMMDDm1}/rave/RAVE-HrlyEmiss-3km_* ${fire_rave_dir_work}/.
-   ln -s ${FIRE_RAVE_DIR}/${YYYYMMDDm2}/rave/RAVE-HrlyEmiss-3km_* ${fire_rave_dir_work}/.
+if [ -d "${FIRE_RAVE_DIR}/${YYYYMMDDm1}/rave" ]; then
+    fire_rave_dir_work=$workdir
+    ln -s "${FIRE_RAVE_DIR}/${YYYYMMDD}/rave/RAVE-HrlyEmiss-3km_*" "${fire_rave_dir_work}/."
+    ln -s "${FIRE_RAVE_DIR}/${YYYYMMDDm1}/rave/RAVE-HrlyEmiss-3km_*" "${fire_rave_dir_work}/."
+    ln -s "${FIRE_RAVE_DIR}/${YYYYMMDDm2}/rave/RAVE-HrlyEmiss-3km_*" "${fire_rave_dir_work}/."
 else
-   fire_rave_dir_work=${FIRE_RAVE_DIR}
+    fire_rave_dir_work=${FIRE_RAVE_DIR}
 fi
 
-#
-#-----------------------------------------------------------------------
-#
-# Call the ex-script for this J-job.
-#
-#-----------------------------------------------------------------------
-#
+# Check whether the RAVE files need to be split into hourly files
+# Format the current day and hour properly for UTC
+ebb_dc=${EBB_DCYCLE}
+if [ "$ebb_dc" -eq 1 ]; then
+    ddhh_to_use="${current_day}${current_hh}"
+    dd_to_use="${current_day}"
+else
+    ddhh_to_use="${previous_day}${prev_hh}"
+    dd_to_use="${previous_day}"
+fi
+
+# Construct file names and check their existence
+intp_fname="${fire_rave_dir_work}/RAVE-HrlyEmiss-3km_v2r0_blend_s${ddhh_to_use}00000_e${dd_to_use}23*.nc"
+intp_fname_beta="${fire_rave_dir_work}/Hourly_Emissions_3km_${ddhh_to_use}00_${dd_to_use}23*.nc"
+echo "Filename pattern: $intp_fname"
+
+if ls $intp_fname 1> /dev/null 2>&1 || ls $intp_fname_beta 1> /dev/null 2>&1; then
+    echo "Files exist"
+    echo $intp_fname || exit 1
+
+    #Determine which file is available
+    if [ -f "$intp_fname" ]; then
+        file_to_use=$intp_fname
+    elif [ -f "$intp_fname_beta" ]; then
+        file_to_use=$intp_fname_beta
+    else
+        echo "No valid file found, exiting."
+        exit 1
+    fi
+
+    echo "Using file: $file_to_use"
+
+    # Loop over each hour of the day
+    for hour in {00..23}; do
+        # Define the output filename
+        output_file="${fire_rave_dir_work}/Hourly_Emissions_3km_${dd_to_use}${hour}00_${dd_to_use}${hour}00.nc"
+        # Extract hourly data using ncks
+        ncks -d time,$hour,$hour $file_to_use $output_file
+    done
+    echo "Hourly files created"
+
+else
+    echo "Files do not exist"
+fi
+
+# Run Python script for generating emissions#
 python -u  ${USHdir}/generate_fire_emissions.py \
   "${FIX_SMOKE_DUST}/${PREDEF_GRID_NAME}" \
   "${fire_rave_dir_work}" \
@@ -159,4 +193,3 @@ In directory:    \"${scrfunc_dir}\"
 #-----------------------------------------------------------------------
 #
 { restore_shell_opts; } > /dev/null 2>&1
-
