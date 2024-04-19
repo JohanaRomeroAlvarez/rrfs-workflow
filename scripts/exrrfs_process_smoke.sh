@@ -119,37 +119,31 @@ else
 fi
 
 # Construct file names and check their existence
-intp_fname="${fire_rave_dir_work}/RAVE-HrlyEmiss-3km_v2r0_blend_s${ddhh_to_use}00000_e${dd_to_use}23*.nc"
-intp_fname_beta="${fire_rave_dir_work}/Hourly_Emissions_3km_${ddhh_to_use}00_${dd_to_use}23*.nc"
-echo "Filename pattern: $intp_fname"
+intp_fname="${fire_rave_dir_work}/RAVE-HrlyEmiss-3km_v2r0_blend_s${ddhh_to_use}00000_e${dd_to_use}23*"
+intp_fname_beta="${fire_rave_dir_work}/Hourly_Emissions_3km_${ddhh_to_use}00_${dd_to_use}23*"
 
-if ls $intp_fname 1> /dev/null 2>&1 || ls $intp_fname_beta 1> /dev/null 2>&1; then
-    echo "Files exist"
-    echo $intp_fname || exit 1
+echo "Checking for files in directory: $fire_rave_dir_work"
 
-    #Determine which file is available
-    if [ -f "$intp_fname" ]; then
-        file_to_use=$intp_fname
-    elif [ -f "$intp_fname_beta" ]; then
-        file_to_use=$intp_fname_beta
-    else
-        echo "No valid file found, exiting."
-        exit 1
-    fi
+# Find files matching the specified patterns
+files_found=$(find "$fire_rave_dir_work" -type f \( -name "${intp_fname##*/}" -o -name "${intp_fname_beta##*/}" \))
 
-    echo "Using file: $file_to_use"
-
-    # Loop over each hour of the day
-    for hour in {00..23}; do
-        # Define the output filename
-        output_file="${fire_rave_dir_work}/Hourly_Emissions_3km_${dd_to_use}${hour}00_${dd_to_use}${hour}00.nc"
-        # Extract hourly data using ncks
-        ncks -d time,$hour,$hour $file_to_use $output_file
-    done
-    echo "Hourly files created"
-
+if [ -z "$files_found" ]; then
+    echo "No files found matching patterns."
 else
-    echo "Files do not exist"
+    echo "Files found, proceeding with processing..."
+    for file_to_use in $files_found; do
+        echo "Using file: $file_to_use"
+        for hour in {00..23}; do
+            output_file="${fire_rave_dir_work}/Hourly_Emissions_3km_${dd_to_use}${hour}00_${dd_to_use}${hour}00.nc"
+            if [ -f "$output_file" ]; then
+                echo "Output file for hour $hour already exists: $output_file. Skipping..."
+                continue
+            fi
+            echo "Splitting data for hour $hour..."
+            ncks -d time,$hour,$hour "$file_to_use" "$output_file"
+        done
+        echo "Hourly files processing completed for: $file_to_use"
+    done
 fi
 
 # Run Python script for generating emissions#
